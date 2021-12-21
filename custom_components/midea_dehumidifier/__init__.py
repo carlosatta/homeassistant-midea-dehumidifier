@@ -57,7 +57,7 @@ async def async_setup(hass, config):
         return False
 
     #Create client
-    client = MideaClient(username, password, sha256password)
+    client = MideaClient(username, password, sha256password, cacheTimeInSeconds = 0)
 
     #Log-in to the Midea cloud Web Service and get the list of configured Midea/Inventor appliances for the user.
     _LOGGER.info("midea_dehumi: logging into Midea API Web Service...")
@@ -89,8 +89,10 @@ async def async_setup(hass, config):
         appliancesStr += " is not active.\n"
 		
     _LOGGER.info("midea-dehumi: "+appliancesStr)
+    #_LOGGER.warn("midea-dehumi: "+appliancesStr)
     
     #The first appliance having type="0xA1" is returned for default (TODO: otherwise, 'deviceId' configuration option can be used)
+    hass.data[MIDEA_API_CLIENT] = client
     targetDevice = None
     if not deviceId:
         if appliances is not None:
@@ -98,24 +100,35 @@ async def async_setup(hass, config):
                 if a["type"] == "0xA1":
                     deviceId = str(a["id"])
                     targetDevice = a
+                    client_for_device = MideaClient(username, password, sha256password, cacheTimeInSeconds = 0)
+                    res = await hass.async_add_executor_job(client_for_device.login)
+                    if res != -1:
+                        sessionId = client_for_device.current["sessionId"]
+                        _LOGGER.info("midea-dehumi: login success, sessionId=%s", sessionId)
+                        hass.data[MIDEA_API_CLIENT + "_" + a["id"]] = client_for_device
+                    _LOGGER.info("midea-dehumidifier: loading humidifier entity sub-component...")
+                    load_platform(hass, 'humidifier', DOMAIN, {MIDEA_TARGET_DEVICE: targetDevice}, config)
+                    _LOGGER.info("midea-dehumidifier: loading sensor entity sub-component...")
+                    load_platform(hass, 'sensor', DOMAIN, {MIDEA_TARGET_DEVICE: targetDevice}, config)
+                    _LOGGER.info("midea_dehumidifier: platform successfuly initialized.")
     else:
         if appliances is not None:
             for a in appliances:
-                if a["type"] == "0xA1" and deviceID == str(a["id"]):
+                if a["type"] == "0xA1" and deviceId == str(a["id"]):
                     targetDevice = a
 
 
     if targetDevice:
-        _LOGGER.info("midea-dehumidifier: device type 0xA1 found.")
+	#       _LOGGER.info("midea-dehumidifier: device type 0xA1 found.")
 
-        hass.data[MIDEA_API_CLIENT] = client
-        _LOGGER.info("midea-dehumidifier: loading humidifier entity sub-component...")
-        load_platform(hass, 'humidifier', DOMAIN, {MIDEA_TARGET_DEVICE: targetDevice}, config)
+	#        hass.data[MIDEA_API_CLIENT] = client
+	#        _LOGGER.info("midea-dehumidifier: loading humidifier entity sub-component...")
+	#        load_platform(hass, 'humidifier', DOMAIN, {MIDEA_TARGET_DEVICE: targetDevice}, config)
 
-        _LOGGER.info("midea-dehumidifier: loading sensor entity sub-component...")
-        load_platform(hass, 'sensor', DOMAIN, {MIDEA_TARGET_DEVICE: targetDevice}, config)
+	#        _LOGGER.info("midea-dehumidifier: loading sensor entity sub-component...")
+	#        load_platform(hass, 'sensor', DOMAIN, {MIDEA_TARGET_DEVICE: targetDevice}, config)
 
-        _LOGGER.info("midea_dehumidifier: platform successfuly initialized.")
+	#        _LOGGER.info("midea_dehumidifier: platform successfuly initialized.")
         return True
     else:
         _LOGGER.error("midea-dehumidifier: device type 0xA1 not found.")
